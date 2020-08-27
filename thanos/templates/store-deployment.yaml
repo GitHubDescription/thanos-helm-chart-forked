@@ -1,0 +1,87 @@
+{{- if .Values.store.enabled }}
+apiVersion: apps/v1beta2
+kind: Deployment
+metadata:
+  name: {{ include "thanos.fullname" . }}-store
+  labels:
+    app.kubernetes.io/name: {{ include "thanos.name" . }}
+    helm.sh/chart: {{ include "thanos.chart" . }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    app.kubernetes.io/component: store
+spec:
+  replicas: {{ .Values.store.replicaCount }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "thanos.name" . }}
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: store
+  template:
+    metadata:
+    {{- if .Values.store.deployment.annotations }}
+      annotations:
+{{ toYaml .Values.store.deployment.annotations | indent 8 }}
+    {{- end }}
+      labels:
+        app.kubernetes.io/name: {{ include "thanos.name" . }}
+        app.kubernetes.io/instance: {{ .Release.Name }}
+        app.kubernetes.io/component: store
+    spec:
+      containers:
+        - name: {{ .Chart.Name }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args:
+            - "store"
+            - "--log.level={{ .Values.store.logLevel }}"
+            - "--data-dir=/var/thanos/store"
+            {{- if .Values.objectStorageConfig.enabled }}
+            - "--objstore.config=$(OBJSTORE_CONFIG)"
+            {{- end }}
+            {{- if .Values.store.tlsServer.enabled }}
+            - "--grpc-server-tls-cert=/thanos-tls-server/server.crt"
+            - "--grpc-server-tls-key=/thanos-tls-server/server.key"
+            - "--grpc-server-tls-client-ca=/thanos-tls-server/ca.crt"
+            {{- end }}
+          {{- if .Values.objectStorageConfig.enabled }}
+          env:
+          - name: OBJSTORE_CONFIG
+            valueFrom:
+              secretKeyRef:
+                key: {{ .Values.objectStorageConfig.key }}
+                name: {{ .Values.objectStorageConfig.name }}
+          {{- end }}
+          ports:
+            - name: http
+              containerPort: 10902
+            - name: grpc
+              containerPort: 10901
+          volumeMounts:
+            - name: data
+              mountPath: /var/thanos/store
+            {{- if .Values.store.tlsServer.enabled }}
+            - name: {{ include "thanos.fullname" . }}-thanos-store-tls-server
+              mountPath: /thanos-tls-server
+            {{- end }}
+          resources:
+{{ toYaml .Values.store.resources | indent 12 }}
+    {{- with .Values.store.nodeSelector }}
+      nodeSelector:
+{{ toYaml . | indent 8 }}
+    {{- end }}
+    {{- with .Values.store.affinity }}
+      affinity:
+{{ toYaml . | indent 8 }}
+    {{- end }}
+    {{- with .Values.store.tolerations }}
+      tolerations:
+{{ toYaml . | indent 8 }}
+    {{- end }}
+      volumes:
+        - name: data
+      {{- if .Values.store.tlsServer.enabled }}
+        - name: {{ include "thanos.fullname" . }}-thanos-store-tls-server
+          secret:
+            secretName: {{ include "thanos.fullname" . }}-thanos-store-tls-server
+      {{- end }}
+{{- end -}}
